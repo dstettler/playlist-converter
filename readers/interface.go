@@ -1,6 +1,5 @@
-package lib
+package readers
 
 type Reader interface {
 	init(filename string)
 }
-

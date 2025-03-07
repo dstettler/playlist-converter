@@ -2,19 +2,44 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"errors"
 	"fmt"
+	"strings"
+	"slices"
+	"io/fs"
+	"strconv"
 	"log"
+	"runtime"
 	"go.senan.xyz/taglib"
-	"./lib"
+	readers "dstet.me/p2m3u/readers"
 
 )
 import "github.com/alecthomas/kong"
 import "github.com/pelletier/go-toml/v2"
 
+var WHITELISTED_FILETYPES = []string {
+	"OGG",
+	"MP3",
+	"M4A",
+	"FLAC",
+	"WAV",
+	"AIFF",
+}
+
+type MatchType int
+
+const (
+	Exact MatchType = iota
+	ReverseMatch
+	RegularMatch
+)
+
 type ConverterConfig struct {
 	Paths []string
 	Format string
+	FormatMatchType MatchType
+	MatchNum int
 }
 
 func MakeConverterConfig() ConverterConfig {
@@ -72,25 +97,71 @@ func parseConfig(filepath string) ConverterConfig {
 }
 
 func osPathJoin(path1 string, path2 string) string {
-	// @TODO
-	return ""
+	if runtime.GOOS == "windows" {
+		return path1 + "\\" + path2
+	} else {
+		return path1 + "/" + path2
+	}
 }
 
-func readSong(filepath string) Song {
+func readSong(filepath string, relpath string) Song {
 	song := MakeSong()
+	fmt.Println("Reading:", )
+	// return song
+	tags, err := taglib.ReadTags(filepath)
+	if err != nil {
+		log.Fatal(err)
+		return song
+	}
+
+	if len(tags[taglib.Album]) > 0 {
+		song.Album = tags[taglib.Album][0]
+	}
+	
+	if len(tags[taglib.AlbumArtist]) > 0 {
+		song.AlbumArtist = tags[taglib.AlbumArtist][0]
+	}
+
+	if len(tags[taglib.Title]) > 0 {
+		song.SongTitle = tags[taglib.Title][0]
+	}
+
+	if len(tags[taglib.TrackNumber]) > 0 {
+		song.TrackNumber, _ = strconv.Atoi(tags[taglib.TrackNumber][0])
+	}
+
+	song.Filepath = filepath
+	song.Relpath = relpath
+
 	return song
 }
 
+func getFileExtension(filename string) string {
+	if strings.Contains(filename, ".") {
+		splitStr := strings.Split(filename, ".")
+		return splitStr[1]
+	} else {
+		return filename
+	}
+}
+
 func addSongsRecursive(dir string, reldir string, songs map[string]Song) {
-	if dirItems, err := os.ReadDir(dir); err != nil {
-		for _, item := range dirItems {
-			if (item.IsDir()) {
-				newDir := osPathJoin(dir, item.Name())
-				newRel := reldir + "/" + item.Name()
-				addSongsRecursive(newDir, newRel, songs)
+	fileSystem := os.DirFS(dir)
+	fs.WalkDir(fileSystem, ".", func(path string, dirEntry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !dirEntry.Type().IsDir() {	
+			ext := getFileExtension(dirEntry.Name())
+			if ext != dirEntry.Name() && slices.Contains(WHITELISTED_FILETYPES, strings.ToUpper(ext)) {
+				key := reldir + "/" + path
+				filepath := osPathJoin(dir, path)
+				songs[key] = readSong(filepath, key)
 			}
 		}
-	}
+		return nil
+	})
 }
 
 func main() {
@@ -115,18 +186,11 @@ func main() {
 		return
 	}
 
+	fmt.Println("Building database...")
 	for _, path := range config.Paths {
-		addSongsRecursive(path, "", foundSongs)
-	}
-			
-	tags, err := taglib.ReadTags("/home/devon/Music/1_1_Catharsis.ogg")
-	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Reading", path)
+		addSongsRecursive(path, filepath.Base(path), foundSongs)
 	}
 
-	fmt.Printf("tags: %v\n", tags) // map[string][]string
-
-	fmt.Printf("AlbumArtist: %q\n", tags[taglib.AlbumArtist])
-	fmt.Printf("Album: %q\n", tags[taglib.Album])
-	fmt.Printf("TrackNumber: %q\n", tags[taglib.TrackNumber])
+	fmt.Println(foundSongs)
 }
