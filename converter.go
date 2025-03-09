@@ -1,26 +1,27 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
+	"encoding/gob"
 	"errors"
 	"fmt"
-	"strings"
-	"slices"
 	"io/fs"
-	"strconv"
 	"log"
-	"encoding/gob"
+	"os"
+	"path/filepath"
 	"runtime"
-	"go.senan.xyz/taglib"
+	"slices"
+	"strconv"
+	"strings"
+
+	common "dstet.me/p2m3u/common"
 	readers "dstet.me/p2m3u/readers"
 	writers "dstet.me/p2m3u/writers"
-	common "dstet.me/p2m3u/common"
+	"github.com/alecthomas/kong"
+	"github.com/pelletier/go-toml/v2"
+	"go.senan.xyz/taglib"
 )
-import "github.com/alecthomas/kong"
-import "github.com/pelletier/go-toml/v2"
 
-var WhitelistedFiletypes = []string {
+var WhitelistedFiletypes = []string{
 	"OGG",
 	"MP3",
 	"M4A",
@@ -29,29 +30,30 @@ var WhitelistedFiletypes = []string {
 	"AIFF",
 }
 
-var InputTypes = []string {
+var InputTypes = []string{
 	"CSV",
 	"EXPORTIFY",
 }
 
-var OutputTypes = []string {
+var OutputTypes = []string{
 	"M3U",
 }
+
 const ConverterDbFile = "converter.db"
 
 var CLI struct {
-	Input string `arg:"" help:"Input playlist" type:"path"`	
-	Output string `arg:"" help:"Output file" type:"path"`
-	SearchDirs  []string `arg:"" help:"Directories to search" type:"path" optional:""`
-	Config string `short:"c" help:"Config file to use" type:"path"`
-	InputType string `short:"i" help:"Mode to parse input file" optional:""`
-	OutputType string `short:"o" help:"Mode to write output file" optional:""`
-	Verbosity int    `type:"counter" short:"v" optional:"" help:"Verbosity counter" default:"0"`
+	Input      string   `arg:"" help:"Input playlist" type:"path"`
+	Output     string   `arg:"" help:"Output file" type:"path"`
+	SearchDirs []string `arg:"" help:"Directories to search" type:"path" optional:""`
+	Config     string   `short:"c" help:"Config file to use" type:"path"`
+	InputType  string   `short:"i" help:"Mode to parse input file" optional:""`
+	OutputType string   `short:"o" help:"Mode to write output file" optional:""`
+	Verbosity  int      `type:"counter" short:"v" optional:"" help:"Verbosity counter" default:"0"`
 }
 
 func parseConfig(filepath string) common.ConverterConfig {
-	if _, err  := os.Stat(filepath); err == nil {
-		var config common.ConverterConfig	
+	if _, err := os.Stat(filepath); err == nil {
+		var config common.ConverterConfig
 		if fileContents, fileErr := os.ReadFile(filepath); fileErr != nil {
 			fmt.Println("ERROR: Error reading config file:", err, "Using default configuration")
 			return common.MakeConverterConfig()
@@ -70,7 +72,7 @@ func parseConfig(filepath string) common.ConverterConfig {
 		return common.MakeConverterConfig()
 	} else {
 		panic(err)
-	}	
+	}
 }
 
 func osPathJoin(path1 string, path2 string) string {
@@ -93,7 +95,7 @@ func readSong(filepath string, relpath string) common.Song {
 	if len(tags[taglib.Album]) > 0 {
 		song.Album = tags[taglib.Album][0]
 	}
-	
+
 	if len(tags[taglib.Artist]) > 0 {
 		if len(tags[taglib.Artist]) > 1 {
 			song.Artist = strings.Join(tags[taglib.Artist], ", ")
@@ -136,12 +138,12 @@ func addSongsRecursive(dir string, reldir string, songs map[string]common.Song) 
 			return err
 		}
 
-		if !dirEntry.Type().IsDir() {	
+		if !dirEntry.Type().IsDir() {
 			ext := getFileExtension(dirEntry.Name())
 			if ext != dirEntry.Name() && slices.Contains(WhitelistedFiletypes, strings.ToUpper(ext)) {
 				key := reldir + "/" + path
 				filepath := osPathJoin(dir, path)
-				
+
 				// Only read song metadata if it has not already been loaded from db file
 				if _, exists := songs[key]; !exists {
 					songs[key] = readSong(filepath, key)
@@ -178,15 +180,15 @@ func songMatch(config *common.ConverterConfig, song *common.Song, songKey string
 		}
 
 		return isValid
-	} else if config.FormatMatchType == common.RegularMatch {
-		// TODO
-	} else if  config.FormatMatchType == common.ReverseMatch {
+	} else if config.FormatMatchType == common.FuzzyMatch {
+		// Fuzzy match should check:
+		// - Artists for a minimum number of matches as defined in the config (i.e. Artist A, Artist B can be matched with just the presence of Artist A)
+		// - If album titles match without regex removed "Deluxe" "Anniversary" etc. (only if allowed in config)
 		// TODO
 	}
 
 	return false
 }
-
 
 func matchSongsInList(config *common.ConverterConfig, list []string, songs map[string]common.Song) []*common.Song {
 	songList := make([]*common.Song, len(list))
@@ -209,7 +211,7 @@ func main() {
 	var config common.ConverterConfig
 	foundSongs := make(map[string]common.Song)
 
-	if (CLI.Config != "") {
+	if CLI.Config != "" {
 		config = parseConfig(CLI.Config)
 	} else {
 		config = common.MakeConverterConfig()
@@ -221,13 +223,13 @@ func main() {
 		config.Paths = append(config.Paths, CLI.SearchDirs...)
 	}
 
-	if (config.Paths == nil) {
+	if config.Paths == nil {
 		fmt.Println("ERROR: No search paths specified! Unable to continue.")
 		return
 	}
 
 	if _, err := os.Stat(ConverterDbFile); err == nil {
-		fmt.Println("Existing db file found. Reading...")	
+		fmt.Println("Existing db file found. Reading...")
 		gobFile, err := os.Open(ConverterDbFile)
 		if err != nil {
 			panic(err)
@@ -239,7 +241,7 @@ func main() {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		panic(err)
 	}
-	
+
 	fmt.Println("Building database...")
 	for _, path := range config.Paths {
 		fmt.Println("Reading", path)

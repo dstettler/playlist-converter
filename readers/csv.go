@@ -8,31 +8,31 @@ import (
 )
 
 type csvFields struct {
-	ArtistField string;
-	AlbumArtistField string;
-	TitleField string;
-	AlbumField string;
-	TrackNumberField string;
+	ArtistField      string
+	AlbumArtistField string
+	TitleField       string
+	AlbumField       string
+	TrackNumberField string
 }
 
-var fieldsTemplate = map[string]csvFields {
+var fieldsTemplate = map[string]csvFields{
 	"default": csvFields{
-		ArtistField: "Artist",
+		ArtistField:      "Artist",
 		AlbumArtistField: "AlbumArtist",
-		TitleField: "Title",
-		AlbumField: "Album",
+		TitleField:       "Title",
+		AlbumField:       "Album",
 		TrackNumberField: "Track Number",
 	},
 	"exportify": csvFields{
-		ArtistField: "Artist Name(s)",
+		ArtistField:      "Artist Name(s)",
 		AlbumArtistField: "Album Artist Name(s)",
-		TitleField: "Track Name",
-		AlbumField: "Album Name",
+		TitleField:       "Track Name",
+		AlbumField:       "Album Name",
 		TrackNumberField: "Track Number",
 	},
 }
 
-func ReadCsv (filename string, csvType string) PlaylistReader {
+func ReadCsv(filename string, csvType string) PlaylistReader {
 	csvFields := fieldsTemplate[csvType]
 
 	ioReader, fileErr := os.Open(filename)
@@ -68,12 +68,11 @@ func ReadCsv (filename string, csvType string) PlaylistReader {
 				}
 			}
 
-			if (
-				artistIdx == -1 && 
+			if artistIdx == -1 &&
 				albumArtistIdx == -1 &&
 				titleIdx == -1 &&
 				albumIdx == -1 &&
-				trackNumIdx == -1) {
+				trackNumIdx == -1 {
 				panic("Input CSV does not include valid header")
 			} else {
 				// fmt.Println("Header indices:", artistIdx, albumArtistIdx, titleIdx, albumIdx, trackNumIdx)
@@ -82,19 +81,19 @@ func ReadCsv (filename string, csvType string) PlaylistReader {
 			field := ReaderField{TrackNumber: -1}
 			if artistIdx != -1 {
 				field.Artist = record[artistIdx]
-			} 
+			}
 
 			if albumArtistIdx != -1 {
 				field.AlbumArtist = record[albumArtistIdx]
-			} 
+			}
 
 			if titleIdx != -1 {
 				field.Title = record[titleIdx]
-			} 
+			}
 
 			if albumIdx != -1 {
 				field.Album = record[albumIdx]
-			} 
+			}
 
 			if trackNumIdx != -1 {
 				field.TrackNumber, err = strconv.Atoi(record[trackNumIdx])

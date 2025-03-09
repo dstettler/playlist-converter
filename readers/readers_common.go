@@ -1,16 +1,16 @@
 package readers
 
 import (
-	"strings"
 	"strconv"
+	"strings"
 
 	common "dstet.me/p2m3u/common"
 )
 
 type ReaderField struct {
-	Title   string
+	Title       string
 	AlbumArtist string
-	Album string
+	Album       string
 	Artist      string
 	TrackNumber int
 }
@@ -19,7 +19,7 @@ type PlaylistReader struct {
 	fields []ReaderField
 }
 
-func (r PlaylistReader) GetKeyList (format string) []string {
+func (r PlaylistReader) GetKeyList(format string) []string {
 	var keys []string
 
 	splitFormat := strings.Split(format, "/")
@@ -30,7 +30,7 @@ func (r PlaylistReader) GetKeyList (format string) []string {
 
 			if ident == common.AlbumFormat {
 				identVal = field.Album
-			}  else if ident == common.AlbumArtistFormat {
+			} else if ident == common.AlbumArtistFormat {
 				identVal = field.AlbumArtist
 			} else if ident == common.ArtistFormat {
 				identVal = field.Artist
@@ -47,7 +47,7 @@ func (r PlaylistReader) GetKeyList (format string) []string {
 			key.WriteString(identVal)
 
 			// Only append '/' on nonfinal idents
-			if i < len(splitFormat) - 1 {
+			if i < len(splitFormat)-1 {
 				key.WriteString("/")
 			}
 		}

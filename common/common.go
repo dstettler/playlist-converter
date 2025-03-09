@@ -10,30 +10,29 @@ type MatchType int
 
 const (
 	Exact MatchType = iota
-	ReverseMatch
-	RegularMatch
+	FuzzyMatch
 )
 
 type ConverterConfig struct {
-	Paths []string
-	Format string
+	Paths           []string
+	Format          string
 	FormatMatchType MatchType
-	MatchNum int
+	FuzzyMatchNum   int
 }
 
 func MakeConverterConfig() ConverterConfig {
-	return	ConverterConfig{
-		Paths: nil,
-		Format: ArtistFormat + "/" + AlbumFormat + "/" + TitleFormat,
+	return ConverterConfig{
+		Paths:           nil,
+		Format:          ArtistFormat + "/" + AlbumFormat + "/" + TitleFormat,
 		FormatMatchType: Exact,
-		MatchNum: 0,
+		FuzzyMatchNum:   0,
 	}
 }
 
 type Song struct {
 	Filepath    string
-	Relpath string
-	Title   string
+	Relpath     string
+	Title       string
 	AlbumArtist string
 	Artist      string
 	Album       string
@@ -43,4 +42,3 @@ type Song struct {
 func MakeSong() Song {
 	return Song{}
 }
-
