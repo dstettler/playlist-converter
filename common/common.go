@@ -39,7 +39,7 @@ type ConverterConfig struct {
 	Format                string
 	MinimumMatchAllowance float32
 	FiletypeBonuses       map[string]float32
-	SplitCharacter        string
+	SplitCharacters       []string
 	SpecialCases          []string
 }
 
@@ -49,7 +49,7 @@ func MakeConverterConfig() ConverterConfig {
 		Format:                ArtistFormat + FormatSeparatorCharacter + AlbumFormat + FormatSeparatorCharacter + TitleFormat,
 		MinimumMatchAllowance: 0.9,
 		FiletypeBonuses:       filetypeDefaultBonuses,
-		SplitCharacter:        ",",
+		SplitCharacters:       []string{",", ";"},
 		SpecialCases:          nil,
 	}
 }
@@ -269,6 +269,8 @@ func matchInMultimatch(val int, multiMatch [][]int) bool {
 
 // Splits on the library's dedicated split character.
 func ArtistSplit(artists string, config *ConverterConfig) []string {
+	var split []string
+
 	var containsSpecial []string
 	for _, special := range config.SpecialCases {
 		if strings.Contains(artists, special) {
@@ -276,13 +278,21 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 		}
 	}
 
+	var baseRegexStr strings.Builder
+	for i, char := range config.SplitCharacters {
+		baseRegexStr.WriteString(`([^\\]` + char + ")")
+
+		if i != len(config.SplitCharacters)-1 {
+			baseRegexStr.WriteString("|")
+		}
+	}
+
 	// If the string does not contain a special case that needs to be ignored.
 	if len(containsSpecial) < 1 {
 		// Some formats will have an escape char in the artist name.
-		re := regexp.MustCompile(`[^\\]` + config.SplitCharacter)
+		re := regexp.MustCompile(baseRegexStr.String())
 
 		matches := re.FindAllStringIndex(artists, -1)
-		var split []string
 		for i, match := range matches {
 			if i == 0 {
 				split = append(split, artists[0:match[1]-1])
@@ -296,23 +306,16 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 		} else {
 			split = append(split, artists)
 		}
-
-		// Replace instances of the escaped split char with just the char itself.
-		for i := range split {
-			split[i] = strings.ReplaceAll(split[i], "\\"+config.SplitCharacter, config.SplitCharacter)
-		}
-
-		return split
 	} else {
 		// Since there are special characters we need to ignore any matches found in their ranges.
-		baseRe := regexp.MustCompile(`[^\\]` + config.SplitCharacter)
+		baseRe := regexp.MustCompile(baseRegexStr.String())
 
 		var multiArtistReString strings.Builder
 		for i, special := range containsSpecial {
+			multiArtistReString.WriteString("(" + special + ")")
+
 			if i != len(containsSpecial)-1 {
-				multiArtistReString.WriteString(special + "|")
-			} else {
-				multiArtistReString.WriteString(special)
+				multiArtistReString.WriteString("|")
 			}
 		}
 
@@ -321,7 +324,6 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 		baseMatches := baseRe.FindAllStringIndex(artists, -1)
 		multiArtistMatches := multiArtistRe.FindAllStringIndex(artists, -1)
 
-		var split []string
 		for i, match := range baseMatches {
 			if !matchInMultimatch(match[1]-1, multiArtistMatches) {
 				if len(split) == 0 {
@@ -337,12 +339,14 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 		} else {
 			split = append(split, artists)
 		}
-
-		// Replace instances of the escaped split char with just the char itself.
-		for i := range split {
-			split[i] = strings.ReplaceAll(split[i], "\\"+config.SplitCharacter, config.SplitCharacter)
-		}
-
-		return split
 	}
+
+	// Replace instances of the escaped split char with just the char itself.
+	for i := range split {
+		for _, char := range config.SplitCharacters {
+			split[i] = strings.ReplaceAll(split[i], "\\"+char, char)
+		}
+	}
+
+	return split
 }
