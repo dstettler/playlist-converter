@@ -29,3 +29,5 @@ MP3 = 0.4
 ```
 ## Building
 If you have Go installed, it *should* install dependencies with `go build`, and this does not require any installation, so just run the generated executable!
+
+Use the `--help` argument to see the list of required and optional args.

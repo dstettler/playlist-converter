@@ -47,7 +47,6 @@ var CLI struct {
 	OutputMissing string   `help:"File to output missing songs" type:"path" optional:""`
 	InputType     string   `short:"i" help:"Mode to parse input file" optional:""`
 	OutputType    string   `short:"o" help:"Mode to write output file" optional:""`
-	Verbosity     int      `type:"counter" short:"v" optional:"" help:"Verbosity counter" default:"0"`
 }
 
 func parseConfig(filepath string) common.ConverterConfig {
