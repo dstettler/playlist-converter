@@ -22,7 +22,7 @@ type PlaylistReader struct {
 func (r PlaylistReader) GetKeyList(format string) []string {
 	var keys []string
 
-	splitFormat := strings.Split(format, "/")
+	splitFormat := strings.Split(format, common.FormatSeparatorCharacter)
 	for _, field := range r.fields {
 		var key strings.Builder
 		for i, ident := range splitFormat {
@@ -48,7 +48,7 @@ func (r PlaylistReader) GetKeyList(format string) []string {
 
 			// Only append '/' on nonfinal idents
 			if i < len(splitFormat)-1 {
-				key.WriteString("/")
+				key.WriteString(common.FormatSeparatorCharacter)
 			}
 		}
 

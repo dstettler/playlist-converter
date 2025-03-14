@@ -15,6 +15,7 @@ const AlbumFormat = "Album"
 const ArtistFormat = "Artist"
 const TitleFormat = "Title"
 const TrackNumberFormat = "Track"
+const FormatSeparatorCharacter = "\u001E"
 
 const ArtistMatchVal = 0.3
 const AlbumArtistMatchVal = 0.3
@@ -38,14 +39,18 @@ type ConverterConfig struct {
 	Format                string
 	MinimumMatchAllowance float32
 	FiletypeBonuses       map[string]float32
+	SplitCharacter        string
+	SpecialCases          []string
 }
 
 func MakeConverterConfig() ConverterConfig {
 	return ConverterConfig{
 		Paths:                 nil,
-		Format:                ArtistFormat + "/" + AlbumFormat + "/" + TitleFormat,
+		Format:                ArtistFormat + FormatSeparatorCharacter + AlbumFormat + FormatSeparatorCharacter + TitleFormat,
 		MinimumMatchAllowance: 0.9,
 		FiletypeBonuses:       filetypeDefaultBonuses,
+		SplitCharacter:        ",",
+		SpecialCases:          nil,
 	}
 }
 
@@ -166,13 +171,14 @@ func (lib *ConverterLibrary) GetNewId(path string) int {
 func (lib ConverterLibrary) getMatchCandidates(formatStr string, config *ConverterConfig) map[int]float32 {
 	// Use a map in place of a set (to avoid dupes).
 	candidateMap := make(map[int]float32)
-	splitFormatStr := strings.Split(formatStr, "/")
+	splitFormatStr := strings.Split(formatStr, FormatSeparatorCharacter)
 
-	for i, split := range strings.Split(config.Format, "/") {
+	for i, split := range strings.Split(config.Format, FormatSeparatorCharacter) {
 		if split == ArtistFormat {
 			// Special case for artists, since there may be multiple.
-			for _, splitArtist := range ArtistSplit(splitFormatStr[i]) {
-				for _, candidate := range lib.ArtistsIndex[strings.TrimSpace(splitArtist)] {
+			for _, splitArtist := range ArtistSplit(splitFormatStr[i], config) {
+				trimmedArtist := strings.TrimSpace(splitArtist)
+				for _, candidate := range lib.ArtistsIndex[trimmedArtist] {
 					if val, present := candidateMap[candidate]; present {
 						candidateMap[candidate] = val + ArtistMatchVal
 					} else {
@@ -182,7 +188,7 @@ func (lib ConverterLibrary) getMatchCandidates(formatStr string, config *Convert
 			}
 		} else if split == AlbumArtistFormat {
 			// Again, special case for artists, since there may be multiple.
-			for _, splitArtist := range ArtistSplit(splitFormatStr[i]) {
+			for _, splitArtist := range ArtistSplit(splitFormatStr[i], config) {
 				for _, candidate := range lib.AlbumArtistsIndex[strings.TrimSpace(splitArtist)] {
 					if val, present := candidateMap[candidate]; present {
 						candidateMap[candidate] = val + AlbumArtistMatchVal
@@ -244,34 +250,99 @@ func (lib ConverterLibrary) GetSongFromFormatString(formatStr string, config *Co
 func GetFileExtension(filename string) string {
 	if strings.Contains(filename, ".") {
 		splitStr := strings.Split(filename, ".")
-		return strings.ToUpper(splitStr[1])
+		return strings.ToUpper(splitStr[len(splitStr)-1])
 	} else {
 		return filename
 	}
 }
 
-func ArtistSplit(artists string) []string {
-	re := regexp.MustCompile(`[^\\],`)
-
-	matches := re.FindAllStringIndex(artists, -1)
-	var split []string
-	for i, match := range matches {
-		if i == 0 {
-			split = append(split, artists[0:match[0]+1])
-		} else {
-			split = append(split, artists[matches[i-1][1]:match[0]+1])
+// Returns true if val is found in any of the multimatch ranges.
+func matchInMultimatch(val int, multiMatch [][]int) bool {
+	for _, match := range multiMatch {
+		if val >= match[0] && val < match[1] {
+			return true
 		}
 	}
 
-	if len(matches) > 1 {
-		split = append(split, artists[matches[len(matches)-1][1]:])
+	return false
+}
+
+// Splits on the library's dedicated split character.
+func ArtistSplit(artists string, config *ConverterConfig) []string {
+	var containsSpecial []string
+	for _, special := range config.SpecialCases {
+		if strings.Contains(artists, special) {
+			containsSpecial = append(containsSpecial, special)
+		}
+	}
+
+	// If the string does not contain a special case that needs to be ignored
+	if len(containsSpecial) < 1 {
+		// Some formats will have an escape char in the artist name
+		re := regexp.MustCompile(`[^\\]` + config.SplitCharacter)
+
+		matches := re.FindAllStringIndex(artists, -1)
+		var split []string
+		for i, match := range matches {
+			if i == 0 {
+				split = append(split, artists[0:match[1]-1])
+			} else {
+				split = append(split, artists[matches[i-1][1]:match[1]-1])
+			}
+		}
+
+		if len(matches) > 0 {
+			split = append(split, artists[matches[len(matches)-1][1]:])
+		} else {
+			split = append(split, artists)
+		}
+
+		// Replace instances of the escaped split char with just the char itself
+		for i := range split {
+			split[i] = strings.ReplaceAll(split[i], "\\"+config.SplitCharacter, config.SplitCharacter)
+		}
+
+		return split
 	} else {
-		split = append(split, artists)
-	}
+		// Since there are special characters we need to ignore any matches found in their ranges
+		baseRe := regexp.MustCompile(`[^\\]` + config.SplitCharacter)
 
-	for i := range split {
-		split[i] = strings.ReplaceAll(split[i], "\\,", ",")
-	}
+		var multiArtistReString strings.Builder
+		for i, special := range containsSpecial {
+			if i != len(containsSpecial)-1 {
+				multiArtistReString.WriteString(special + "|")
+			} else {
+				multiArtistReString.WriteString(special)
+			}
+		}
 
-	return split
+		multiArtistRe := regexp.MustCompile(multiArtistReString.String())
+
+		baseMatches := baseRe.FindAllStringIndex(artists, -1)
+		multiArtistMatches := multiArtistRe.FindAllStringIndex(artists, -1)
+
+		var split []string
+		for i, match := range baseMatches {
+			if !matchInMultimatch(match[1]-1, multiArtistMatches) {
+				if len(split) == 0 {
+					split = append(split, artists[0:match[1]-1])
+				} else {
+					split = append(split, artists[baseMatches[i-1][1]:match[1]-1])
+				}
+			}
+		}
+
+		if len(baseMatches) > len(multiArtistMatches) {
+			split = append(split, artists[baseMatches[len(baseMatches)-1][1]:])
+		} else {
+			split = append(split, artists)
+		}
+
+		// Replace instances of the escaped split char with just the char itself
+		for i := range split {
+			split[i] = strings.ReplaceAll(split[i], "\\"+config.SplitCharacter, config.SplitCharacter)
+		}
+
+		return split
+	}
 }

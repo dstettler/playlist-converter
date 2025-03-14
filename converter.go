@@ -52,15 +52,15 @@ var CLI struct {
 
 func parseConfig(filepath string) common.ConverterConfig {
 	if _, err := os.Stat(filepath); err == nil {
-		var config common.ConverterConfig
+		config := common.MakeConverterConfig()
 		if fileContents, fileErr := os.ReadFile(filepath); fileErr != nil {
 			fmt.Println("ERROR: Error reading config file:", err, "Using default configuration")
-			return common.MakeConverterConfig()
+			return config
 		} else {
 			if err := toml.Unmarshal(fileContents, &config); err != nil {
 				panic(err)
 			}
-			fmt.Println("Unmarshaled:", config, "From:", fileContents)
+
 			if len(config.Paths) < 1 {
 				config.Paths = nil
 			}
@@ -121,7 +121,7 @@ func readSong(filepath string, relpath string) common.Song {
 	return song
 }
 
-func addSongsRecursive(dir string, reldir string, lib *common.ConverterLibrary) {
+func addSongsRecursive(dir string, reldir string, lib *common.ConverterLibrary, config *common.ConverterConfig) {
 	fileSystem := os.DirFS(dir)
 	fs.WalkDir(fileSystem, ".", func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
@@ -139,7 +139,8 @@ func addSongsRecursive(dir string, reldir string, lib *common.ConverterLibrary) 
 					id := lib.GetNewId(key)
 					newSong := readSong(filepath, key)
 					lib.Songs[id] = &newSong
-					for _, artist := range common.ArtistSplit(newSong.Artist) {
+
+					for _, artist := range common.ArtistSplit(newSong.Artist, config) {
 						artist = strings.TrimSpace(artist)
 
 						if artist != common.UnknownArtist {
@@ -147,7 +148,7 @@ func addSongsRecursive(dir string, reldir string, lib *common.ConverterLibrary) 
 						}
 					}
 
-					for _, artist := range common.ArtistSplit(newSong.AlbumArtist) {
+					for _, artist := range common.ArtistSplit(newSong.AlbumArtist, config) {
 						artist = strings.TrimSpace(artist)
 
 						if artist != common.UnknownArtist {
@@ -204,7 +205,7 @@ func main() {
 	fmt.Println("Building database...")
 	for _, path := range config.Paths {
 		fmt.Println("Reading", path)
-		addSongsRecursive(path, filepath.Base(path), &library)
+		addSongsRecursive(path, filepath.Base(path), &library, &config)
 	}
 
 	fmt.Println("Writing database...")
