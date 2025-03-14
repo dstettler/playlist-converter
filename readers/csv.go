@@ -74,8 +74,6 @@ func ReadCsv(filename string, csvType string) PlaylistReader {
 				albumIdx == -1 &&
 				trackNumIdx == -1 {
 				panic("Input CSV does not include valid header")
-			} else {
-				// fmt.Println("Header indices:", artistIdx, albumArtistIdx, titleIdx, albumIdx, trackNumIdx)
 			}
 		} else {
 			field := ReaderField{TrackNumber: -1}

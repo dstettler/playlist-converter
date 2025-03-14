@@ -228,7 +228,7 @@ func (lib ConverterLibrary) GetSongFromFormatString(formatStr string, config *Co
 	currentCandidate := -1
 	for candidate, val := range candidates {
 		// Add any additional values based on the candidate (this can positively bias
-		// a specific version of a file in the case of dupes)
+		// a specific version of a file in the case of dupes).
 		ext := GetFileExtension(lib.Songs[candidate].Filepath)
 		val += config.FiletypeBonuses[strings.ToUpper(ext)]
 
@@ -276,9 +276,9 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 		}
 	}
 
-	// If the string does not contain a special case that needs to be ignored
+	// If the string does not contain a special case that needs to be ignored.
 	if len(containsSpecial) < 1 {
-		// Some formats will have an escape char in the artist name
+		// Some formats will have an escape char in the artist name.
 		re := regexp.MustCompile(`[^\\]` + config.SplitCharacter)
 
 		matches := re.FindAllStringIndex(artists, -1)
@@ -297,14 +297,14 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 			split = append(split, artists)
 		}
 
-		// Replace instances of the escaped split char with just the char itself
+		// Replace instances of the escaped split char with just the char itself.
 		for i := range split {
 			split[i] = strings.ReplaceAll(split[i], "\\"+config.SplitCharacter, config.SplitCharacter)
 		}
 
 		return split
 	} else {
-		// Since there are special characters we need to ignore any matches found in their ranges
+		// Since there are special characters we need to ignore any matches found in their ranges.
 		baseRe := regexp.MustCompile(`[^\\]` + config.SplitCharacter)
 
 		var multiArtistReString strings.Builder
@@ -338,7 +338,7 @@ func ArtistSplit(artists string, config *ConverterConfig) []string {
 			split = append(split, artists)
 		}
 
-		// Replace instances of the escaped split char with just the char itself
+		// Replace instances of the escaped split char with just the char itself.
 		for i := range split {
 			split[i] = strings.ReplaceAll(split[i], "\\"+config.SplitCharacter, config.SplitCharacter)
 		}

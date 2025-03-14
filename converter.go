@@ -179,7 +179,7 @@ func matchSongsInList(config *common.ConverterConfig, list []string, lib *common
 }
 
 func main() {
-	kong.Parse(&CLI, kong.Description("A utility that takes in a CSV playlist of song metadata and converts it to a relative-pathed M3U playlist."))
+	kong.Parse(&CLI, kong.Description("A utility that takes in a playlist of song metadata and converts it to a relative-pathed playlist."))
 	var config common.ConverterConfig
 	library := common.MakeLibrary()
 
