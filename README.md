@@ -1,7 +1,7 @@
 # P2M3U
 This is a super simple utility that converts CSVs created by Exportify (or any CSV with metadata to match) to relative-pathed M3U playlists.
-I split the reading/writing out a bit to allow for more input/output formats, but the gist of what this does is
-Input format with *metadata* -> Output format with paths
+I split the reading/writing out a bit to allow for more input/output formats, but the gist of what this does is:
+`Input format with *metadata* -> Output format with paths`
 
 If you need something that just directly maps path-based playlists into other formats, there are likely existing converters elsewhere.
 If not and I run into the issue in the future, I'll probably write a Python script and link a gist here.
