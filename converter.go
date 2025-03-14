@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -39,16 +38,16 @@ var OutputTypes = []string{
 	"M3U",
 }
 
-const ConverterDbFile = "converter.db"
-
 var CLI struct {
-	Input      string   `arg:"" help:"Input playlist" type:"path"`
-	Output     string   `arg:"" help:"Output file" type:"path"`
-	SearchDirs []string `arg:"" help:"Directories to search" type:"path" optional:""`
-	Config     string   `short:"c" help:"Config file to use" type:"path"`
-	InputType  string   `short:"i" help:"Mode to parse input file" optional:""`
-	OutputType string   `short:"o" help:"Mode to write output file" optional:""`
-	Verbosity  int      `type:"counter" short:"v" optional:"" help:"Verbosity counter" default:"0"`
+	Input         string   `arg:"" help:"Input playlist" type:"path"`
+	Output        string   `arg:"" help:"Output file" type:"path"`
+	SearchDirs    []string `arg:"" help:"Directories to search" type:"path" optional:""`
+	Config        string   `short:"c" help:"Config file to use" type:"path"`
+	DbFile        string   `help:"Custom db file" type:"path" optional:""`
+	OutputMissing string   `help:"File to output missing songs" type:"path" optional:""`
+	InputType     string   `short:"i" help:"Mode to parse input file" optional:""`
+	OutputType    string   `short:"o" help:"Mode to write output file" optional:""`
+	Verbosity     int      `type:"counter" short:"v" optional:"" help:"Verbosity counter" default:"0"`
 }
 
 func parseConfig(filepath string) common.ConverterConfig {
@@ -122,16 +121,7 @@ func readSong(filepath string, relpath string) common.Song {
 	return song
 }
 
-func getFileExtension(filename string) string {
-	if strings.Contains(filename, ".") {
-		splitStr := strings.Split(filename, ".")
-		return splitStr[1]
-	} else {
-		return filename
-	}
-}
-
-func addSongsRecursive(dir string, reldir string, songs map[string]common.Song) {
+func addSongsRecursive(dir string, reldir string, lib *common.ConverterLibrary) {
 	fileSystem := os.DirFS(dir)
 	fs.WalkDir(fileSystem, ".", func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
@@ -139,14 +129,34 @@ func addSongsRecursive(dir string, reldir string, songs map[string]common.Song) 
 		}
 
 		if !dirEntry.Type().IsDir() {
-			ext := getFileExtension(dirEntry.Name())
+			ext := common.GetFileExtension(dirEntry.Name())
 			if ext != dirEntry.Name() && slices.Contains(WhitelistedFiletypes, strings.ToUpper(ext)) {
 				key := reldir + "/" + path
 				filepath := osPathJoin(dir, path)
 
 				// Only read song metadata if it has not already been loaded from db file
-				if _, exists := songs[key]; !exists {
-					songs[key] = readSong(filepath, key)
+				if searchedId := lib.GetId(key); searchedId == -1 {
+					id := lib.GetNewId(key)
+					newSong := readSong(filepath, key)
+					lib.Songs[id] = &newSong
+					for _, artist := range common.ArtistSplit(newSong.Artist) {
+						artist = strings.TrimSpace(artist)
+
+						if artist != common.UnknownArtist {
+							lib.ArtistsIndex[artist] = append(lib.ArtistsIndex[artist], id)
+						}
+					}
+
+					for _, artist := range common.ArtistSplit(newSong.AlbumArtist) {
+						artist = strings.TrimSpace(artist)
+
+						if artist != common.UnknownArtist {
+							lib.AlbumArtistsIndex[artist] = append(lib.AlbumArtistsIndex[artist], id)
+						}
+					}
+
+					lib.AlbumsIndex[newSong.Album] = append(lib.AlbumsIndex[newSong.Album], id)
+					lib.TitlesIndex[newSong.Title] = append(lib.TitlesIndex[newSong.Title], id)
 				}
 			}
 		}
@@ -154,52 +164,13 @@ func addSongsRecursive(dir string, reldir string, songs map[string]common.Song) 
 	})
 }
 
-func songMatch(config *common.ConverterConfig, song *common.Song, songKey string) bool {
-	if config.FormatMatchType == common.Exact {
-		isValid := true
-		splitFormat := strings.Split(config.Format, "/")
-		splitKey := strings.Split(songKey, "/")
-
-		for i, field := range splitFormat {
-			if field == common.ArtistFormat {
-				isValid = isValid && (song.Artist == splitKey[i])
-			} else if field == common.AlbumArtistFormat {
-				isValid = isValid && (song.AlbumArtist == splitKey[i])
-			} else if field == common.AlbumFormat {
-				isValid = isValid && (song.Album == splitKey[i])
-			} else if field == common.TitleFormat {
-				isValid = isValid && (song.Title == splitKey[i])
-			} else if field == common.TrackNumberFormat {
-				keyInt, err := strconv.Atoi(splitKey[i])
-				if err != nil {
-					fmt.Println("ERROR: Format key not convertable to int")
-				}
-
-				isValid = isValid && (song.TrackNumber == keyInt)
-			}
-		}
-
-		return isValid
-	} else if config.FormatMatchType == common.FuzzyMatch {
-		// Fuzzy match should check:
-		// - Artists for a minimum number of matches as defined in the config (i.e. Artist A, Artist B can be matched with just the presence of Artist A)
-		// - If album titles match without regex removed "Deluxe" "Anniversary" etc. (only if allowed in config)
-		// TODO
-	}
-
-	return false
-}
-
-func matchSongsInList(config *common.ConverterConfig, list []string, songs map[string]common.Song) []*common.Song {
+func matchSongsInList(config *common.ConverterConfig, list []string, lib *common.ConverterLibrary) []*common.Song {
 	songList := make([]*common.Song, len(list))
 
-	// *Very* naive and inefficient implementation, maybe TODO streamline
-	for _, song := range songs {
-		for i, val := range list {
-			if songMatch(config, &song, val) {
-				songList[i] = &song
-			}
-		}
+	// Very naive and inefficient implementation, maybe TODO streamline
+	for i, val := range list {
+		song := lib.GetSongFromFormatString(val, config)
+		songList[i] = song
 	}
 
 	// fmt.Println("Got matches:", songList)
@@ -209,7 +180,7 @@ func matchSongsInList(config *common.ConverterConfig, list []string, songs map[s
 func main() {
 	kong.Parse(&CLI, kong.Description("A utility that takes in a CSV playlist of song metadata and converts it to a relative-pathed M3U playlist."))
 	var config common.ConverterConfig
-	foundSongs := make(map[string]common.Song)
+	library := common.MakeLibrary()
 
 	if CLI.Config != "" {
 		config = parseConfig(CLI.Config)
@@ -228,34 +199,16 @@ func main() {
 		return
 	}
 
-	if _, err := os.Stat(ConverterDbFile); err == nil {
-		fmt.Println("Existing db file found. Reading...")
-		gobFile, err := os.Open(ConverterDbFile)
-		if err != nil {
-			panic(err)
-		}
-
-		decoder := gob.NewDecoder(gobFile)
-		decoder.Decode(&foundSongs)
-		gobFile.Close()
-	} else if !errors.Is(err, os.ErrNotExist) {
-		panic(err)
-	}
+	library.TryReadDbFile(CLI.DbFile)
 
 	fmt.Println("Building database...")
 	for _, path := range config.Paths {
 		fmt.Println("Reading", path)
-		addSongsRecursive(path, filepath.Base(path), foundSongs)
+		addSongsRecursive(path, filepath.Base(path), &library)
 	}
 
 	fmt.Println("Writing database...")
-	gobFile, err := os.Create(ConverterDbFile)
-	if err != nil {
-		panic(err)
-	}
-	encoder := gob.NewEncoder(gobFile)
-	encoder.Encode(foundSongs)
-	gobFile.Close()
+	library.WriteDbFile(CLI.DbFile)
 
 	fmt.Println("Reading input playlist...")
 
@@ -263,7 +216,7 @@ func main() {
 	if CLI.InputType != "" {
 		inputType = strings.ToUpper(CLI.InputType)
 	} else {
-		inputType = strings.ToUpper(getFileExtension(CLI.Input))
+		inputType = strings.ToUpper(common.GetFileExtension(CLI.Input))
 	}
 
 	var reader readers.PlaylistReader
@@ -286,19 +239,26 @@ func main() {
 	if CLI.OutputType != "" {
 		outputType = strings.ToUpper(CLI.OutputType)
 	} else {
-		outputType = strings.ToUpper(getFileExtension(CLI.Output))
+		outputType = strings.ToUpper(common.GetFileExtension(CLI.Output))
 	}
 
 	fmt.Println("Matching playlist items...")
-	songList := matchSongsInList(&config, keyList, foundSongs)
+	songList := matchSongsInList(&config, keyList, &library)
 
-	if CLI.Verbosity > 1 {
-		fmt.Println("Couldn't find:")
-		for i, song := range songList {
-			if song == nil {
-				fmt.Println(keyList[i])
+	if CLI.OutputMissing != "" {
+		f, err := os.Create(CLI.OutputMissing)
+		if err == nil {
+			f.WriteString("Couldn't find:\n")
+			for i, song := range songList {
+				if song == nil {
+					f.WriteString(keyList[i] + "\n")
+				}
 			}
+		} else {
+			fmt.Println("ERROR: Error printing to", CLI.OutputMissing)
 		}
+
+		f.Close()
 	}
 
 	fmt.Println("Writing output playlist...")
